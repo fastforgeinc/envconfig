@@ -32,6 +32,17 @@ type ParseError struct {
 	Err       error
 }
 
+// A RequiredFieldError occurs when a required environment variable is missing
+type RequiredFieldError struct {
+	Key  string
+	Alt  string
+	Name string
+}
+
+func (e *RequiredFieldError) Error() string {
+	return fmt.Sprintf("required key %s missing value for field %s", e.Key, e.Name)
+}
+
 // Decoder has the same semantics as Setter, but takes higher precedence.
 // It is provided for historical compatibility.
 type Decoder interface {
@@ -55,6 +66,7 @@ type varInfo struct {
 	Key   string
 	Field reflect.Value
 	Tags  reflect.StructTag
+	Infos []varInfo
 }
 
 // GatherInfo gathers information about the specified struct
@@ -125,7 +137,6 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 			info.Key = fmt.Sprintf("%s_%s", prefix, info.Key)
 		}
 		info.Key = strings.ToUpper(info.Key)
-		infos = append(infos, info)
 
 		if f.Kind() == reflect.Struct {
 			// honor Decode if present
@@ -140,11 +151,11 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 				if err != nil {
 					return nil, err
 				}
-				infos = append(infos[:len(infos)-1], embeddedInfos...)
-
-				continue
+				info.Infos = embeddedInfos
 			}
 		}
+
+		infos = append(infos, info)
 	}
 	return infos, nil
 }
@@ -183,13 +194,29 @@ func CheckDisallowed(prefix string, spec interface{}) error {
 // Process populates the specified struct based on environment variables
 func Process(prefix string, spec interface{}) error {
 	infos, err := gatherInfo(prefix, spec)
+	if err != nil {
+		return err
+	}
 
+	if err = process(infos); err != nil {
+		return err
+	}
+
+	return removeEmptyStructs(spec)
+}
+
+func process(infos []varInfo) error {
 	for _, info := range infos {
 
-		// `os.Getenv` cannot differentiate between an explicitly set empty value
-		// and an unset value. `os.LookupEnv` is preferred to `syscall.Getenv`,
-		// but it is only available in go1.5 or newer. We're using Go build tags
-		// here to use os.LookupEnv for >=go1.5
+		req := info.Tags.Get("required")
+
+		if len(info.Infos) > 0 && (foundValues(info.Infos) || isTrue(req)) {
+			if err := process(info.Infos); err != nil {
+				return err
+			}
+			continue
+		}
+
 		value, ok := lookupEnv(info.Key)
 		if !ok && info.Alt != "" {
 			value, ok = lookupEnv(info.Alt)
@@ -200,19 +227,18 @@ func Process(prefix string, spec interface{}) error {
 			value = def
 		}
 
-		req := info.Tags.Get("required")
 		if !ok && def == "" {
 			if isTrue(req) {
-				key := info.Key
-				if info.Alt != "" {
-					key = info.Alt
+				return &RequiredFieldError{
+					Key:  info.Key,
+					Alt:  info.Alt,
+					Name: info.Name,
 				}
-				return fmt.Errorf("required key %s missing value", key)
 			}
 			continue
 		}
 
-		err = processField(value, info.Field)
+		err := processField(value, info.Field)
 		if err != nil {
 			return &ParseError{
 				KeyName:   info.Key,
@@ -223,8 +249,20 @@ func Process(prefix string, spec interface{}) error {
 			}
 		}
 	}
+	return nil
+}
 
-	return removeEmptyStructs(spec)
+func foundValues(infos []varInfo) bool {
+	for _, info := range infos {
+		_, ok := lookupEnv(info.Key)
+		if !ok && info.Alt != "" {
+			_, ok = lookupEnv(info.Alt)
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 func removeEmptyStructs(spec interface{}) error {
