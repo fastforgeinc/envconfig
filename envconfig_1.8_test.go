@@ -1,3 +1,4 @@
+//go:build go1.8
 // +build go1.8
 
 package envconfig
@@ -18,8 +19,8 @@ func TestParseURL(t *testing.T) {
 	var s SpecWithURL
 
 	os.Clearenv()
-	os.Setenv("ENV_CONFIG_URLVALUE", "https://github.com/kelseyhightower/envconfig")
-	os.Setenv("ENV_CONFIG_URLPOINTER", "https://github.com/kelseyhightower/envconfig")
+	_ = os.Setenv("ENV_CONFIG_URLVALUE", "https://github.com/kelseyhightower/envconfig")
+	_ = os.Setenv("ENV_CONFIG_URLPOINTER", "https://github.com/kelseyhightower/envconfig")
 
 	err := Process("env_config", &s)
 	if err != nil {
@@ -44,7 +45,7 @@ func TestParseURLError(t *testing.T) {
 	var s SpecWithURL
 
 	os.Clearenv()
-	os.Setenv("ENV_CONFIG_URLPOINTER", "http_://foo")
+	_ = os.Setenv("ENV_CONFIG_URLPOINTER", "http_://foo")
 
 	err := Process("env_config", &s)
 
