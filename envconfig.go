@@ -285,7 +285,7 @@ func removeEmptyStructs(spec interface{}) error {
 				return err
 			}
 		case reflect.Ptr:
-			if f.Elem().Kind() == reflect.Struct && !f.IsNil() {
+			if f.Elem().Kind() == reflect.Struct && f.CanInterface() && !f.IsNil() {
 				if err := removeEmptyStructs(f.Elem().Addr().Interface()); err != nil {
 					return err
 				}
