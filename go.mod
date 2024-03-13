@@ -1,4 +1,4 @@
-module github.com/ypopivniak/envconfig
+module github.com/fastforgeinc/envconfig
 
 go 1.16
 
